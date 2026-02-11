@@ -2,11 +2,42 @@ import OpenAI from '@cherrystudio/openai'
 import type { ChatCompletionCreateParams, ChatCompletionCreateParamsStreaming } from '@cherrystudio/openai/resources'
 import type { Provider } from '@types'
 
+import copilotService from '../../services/CopilotService'
 import { loggerService } from '../../services/LoggerService'
 import type { ModelValidationError } from '../utils'
 import { validateModelId } from '../utils'
 
 const logger = loggerService.withContext('ChatCompletionService')
+
+/**
+ * Create OpenAI client with provider-specific configuration
+ * Handles special cases like Copilot dynamic token fetching
+ */
+async function createOpenAIClient(provider: Provider): Promise<OpenAI> {
+  let apiKey = provider.apiKey
+  const defaultHeaders: Record<string, string> = {}
+
+  // Special handling for Copilot: fetch dynamic token
+  if (provider.id === 'copilot') {
+    logger.debug('Fetching dynamic token for Copilot provider')
+    try {
+      const tokenResponse = await copilotService.getToken(null as any, undefined)
+      apiKey = tokenResponse.token
+      // Add Copilot-specific headers
+      defaultHeaders['editor-version'] = 'vscode/1.97.2'
+      defaultHeaders['copilot-vision-request'] = 'true'
+    } catch (error: any) {
+      logger.error('Failed to get Copilot token:', error)
+      throw new Error('Failed to authenticate with Copilot. Please ensure you are logged in.')
+    }
+  }
+
+  return new OpenAI({
+    baseURL: provider.apiHost,
+    apiKey: apiKey,
+    defaultHeaders: defaultHeaders
+  })
+}
 
 export interface ValidationResult {
   isValid: boolean
@@ -67,10 +98,7 @@ export class ChatCompletionService {
 
     const modelId = modelValidation.modelId!
 
-    const client = new OpenAI({
-      baseURL: provider.apiHost,
-      apiKey: provider.apiKey
-    })
+    const client = await createOpenAIClient(provider)
 
     return {
       ok: true,
