@@ -4,6 +4,7 @@
 import { loggerService } from '@logger'
 import type { AiSdkMiddlewareConfig } from '@renderer/aiCore/middleware/AiSdkMiddlewareBuilder'
 import { buildStreamTextParams } from '@renderer/aiCore/prepareParams'
+import { buildProviderOptions } from '@renderer/aiCore/utils/options'
 import { isDedicatedImageGenerationModel, isEmbeddingModel, isFunctionCallingModel } from '@renderer/config/models'
 import { getStoreSetting } from '@renderer/hooks/useSettings'
 import i18n from '@renderer/i18n'
@@ -16,6 +17,7 @@ import { type Chunk, ChunkType } from '@renderer/types/chunk'
 import type { Message, ResponseError } from '@renderer/types/newMessage'
 import { removeSpecialCharactersForTopicName, uuid } from '@renderer/utils'
 import { abortCompletion, readyToAbort } from '@renderer/utils/abortController'
+import { trackTokenUsage } from '@renderer/utils/analytics'
 import { isToolUseModeFunction } from '@renderer/utils/assistant'
 import { getErrorMessage, isAbortError } from '@renderer/utils/error'
 import { purifyMarkdownImages } from '@renderer/utils/markdown'
@@ -305,6 +307,7 @@ export async function fetchMessagesSummary({
   }
 
   const AI = new AiProviderNew(model, providerWithRotatedKey)
+  const actualProvider = AI.getActualProvider()
 
   const topicId = messages?.find((message) => message.topicId)?.topicId || ''
 
@@ -349,9 +352,17 @@ export async function fetchMessagesSummary({
     model
   }
 
+  const { providerOptions, standardParams } = buildProviderOptions(summaryAssistant, model, actualProvider, {
+    enableReasoning: false,
+    enableWebSearch: false,
+    enableGenerateImage: false
+  })
+
   const llmMessages = {
     system: prompt,
-    prompt: conversation
+    prompt: conversation,
+    providerOptions,
+    ...standardParams
   }
 
   const middlewareConfig: AiSdkMiddlewareConfig = {
@@ -375,12 +386,15 @@ export async function fetchMessagesSummary({
       await appendTrace({ topicId, traceId: messageWithTrace.traceId, model })
     }
 
-    const { getText } = await AI.completions(model.id, llmMessages, {
+    const { getText, usage } = await AI.completions(model.id, llmMessages, {
       ...middlewareConfig,
       assistant: summaryAssistant,
       topicId,
       callType: 'summary'
     })
+
+    trackTokenUsage({ usage, model })
+
     const text = getText()
     const result = removeSpecialCharactersForTopicName(text)
     return result ? { text: result } : { text: null, error: i18n.t('error.no_response') }
@@ -447,11 +461,14 @@ export async function fetchNoteSummary({ content, assistant }: { content: string
   }
 
   try {
-    const { getText } = await AI.completions(model.id, llmMessages, {
+    const { getText, usage } = await AI.completions(model.id, llmMessages, {
       ...middlewareConfig,
       assistant: summaryAssistant,
       callType: 'summary'
     })
+
+    trackTokenUsage({ usage, model })
+
     const text = getText()
     return removeSpecialCharactersForTopicName(text) || null
   } catch (error: any) {
@@ -545,6 +562,9 @@ export async function fetchGenerate({
         callType: 'generate'
       }
     )
+
+    trackTokenUsage({ usage: result.usage, model })
+
     return result.getText() || ''
   } catch (error: any) {
     return ''
