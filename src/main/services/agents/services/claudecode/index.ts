@@ -8,7 +8,6 @@ import type {
   HookCallback,
   McpHttpServerConfig,
   Options,
-  PreToolUseHookInput,
   SDKMessage,
   SdkPluginConfig
 } from '@anthropic-ai/claude-agent-sdk'
@@ -26,7 +25,12 @@ import { withoutTrailingApiVersion } from '@shared/utils'
 import { app } from 'electron'
 
 import type { GetAgentSessionResponse } from '../..'
-import type { AgentServiceInterface, AgentStream, AgentStreamEvent } from '../../interfaces/AgentStreamInterface'
+import type {
+  AgentServiceInterface,
+  AgentStream,
+  AgentStreamEvent,
+  AgentThinkingOptions
+} from '../../interfaces/AgentStreamInterface'
 import { sessionService } from '../SessionService'
 import { buildNamespacedToolCallId } from './claude-stream-state'
 import { promptForToolApproval } from './tool-permissions'
@@ -68,7 +72,7 @@ class ClaudeCodeService implements AgentServiceInterface {
 
   constructor() {
     // Resolve Claude Code CLI robustly (works in dev and in asar)
-    this.claudeExecutablePath = require_.resolve('@anthropic-ai/claude-agent-sdk/cli.js')
+    this.claudeExecutablePath = path.join(path.dirname(require_.resolve('@anthropic-ai/claude-agent-sdk')), 'cli.js')
     if (app.isPackaged) {
       this.claudeExecutablePath = this.claudeExecutablePath.replace(/\.asar([\\/])/, '.asar.unpacked$1')
     }
@@ -78,7 +82,8 @@ class ClaudeCodeService implements AgentServiceInterface {
     prompt: string,
     session: GetAgentSessionResponse,
     abortController: AbortController,
-    lastAgentSessionId?: string
+    lastAgentSessionId?: string,
+    thinkingOptions?: AgentThinkingOptions
   ): Promise<AgentStream> {
     const aiStream = new ClaudeCodeStream()
 
@@ -102,9 +107,8 @@ class ClaudeCodeService implements AgentServiceInterface {
       return aiStream
     }
     if (
-      (modelInfo.provider?.type !== 'anthropic' &&
-        (modelInfo.provider?.anthropicApiHost === undefined || modelInfo.provider.anthropicApiHost.trim() === '')) ||
-      modelInfo.provider.apiKey === ''
+      modelInfo.provider?.type !== 'anthropic' &&
+      (modelInfo.provider?.anthropicApiHost === undefined || modelInfo.provider.anthropicApiHost.trim() === '')
     ) {
       logger.error('Anthropic provider configuration is missing', {
         modelInfo
@@ -115,6 +119,12 @@ class ClaudeCodeService implements AgentServiceInterface {
         error: new Error(`Invalid provider type '${modelInfo.provider?.type}'. Expected 'anthropic' provider type.`)
       })
       return aiStream
+    }
+
+    // Providers like Ollama and LM Studio don't require real API keys,
+    // but the Claude Agent SDK needs a non-empty placeholder value
+    if (!modelInfo.provider.apiKey) {
+      modelInfo.provider.apiKey = modelInfo.provider.id
     }
 
     const apiConfig = await apiConfigService.get()
@@ -155,7 +165,39 @@ class ClaudeCodeService implements AgentServiceInterface {
       // on Windows when the username contains non-ASCII characters (e.g., Chinese characters)
       // This prevents the SDK from using the user's home directory which may have encoding problems
       CLAUDE_CONFIG_DIR: path.join(app.getPath('userData'), '.claude'),
+      ENABLE_TOOL_SEARCH: 'auto',
       ...(customGitBashPath ? { CLAUDE_CODE_GIT_BASH_PATH: customGitBashPath } : {})
+    }
+
+    // Merge user-defined environment variables from session configuration
+    const userEnvVars = session.configuration?.env_vars
+    if (userEnvVars && typeof userEnvVars === 'object') {
+      const BLOCKED_ENV_KEYS = new Set([
+        'ANTHROPIC_API_KEY',
+        'ANTHROPIC_AUTH_TOKEN',
+        'ANTHROPIC_BASE_URL',
+        'ANTHROPIC_MODEL',
+        'ANTHROPIC_DEFAULT_OPUS_MODEL',
+        'ANTHROPIC_DEFAULT_SONNET_MODEL',
+        'ANTHROPIC_DEFAULT_HAIKU_MODEL',
+        'ELECTRON_RUN_AS_NODE',
+        'ELECTRON_NO_ATTACH_CONSOLE',
+        'CLAUDE_CONFIG_DIR',
+        'CLAUDE_CODE_USE_BEDROCK',
+        'CLAUDE_CODE_GIT_BASH_PATH',
+        'NODE_OPTIONS',
+        '__PROTO__',
+        'CONSTRUCTOR',
+        'PROTOTYPE'
+      ])
+      for (const [key, value] of Object.entries(userEnvVars)) {
+        const upperKey = key.toUpperCase()
+        if (BLOCKED_ENV_KEYS.has(upperKey)) {
+          logger.warn('Blocked user env var override for system-critical variable', { key })
+        } else if (typeof value === 'string') {
+          env[key] = value
+        }
+      }
     }
 
     const errorChunks: string[] = []
@@ -217,7 +259,7 @@ class ClaudeCodeService implements AgentServiceInterface {
         return {}
       }
 
-      const hookInput = input as PreToolUseHookInput
+      const hookInput = input
       const toolName = hookInput.tool_name
 
       logger.debug('PreToolUse hook triggered', {
@@ -303,7 +345,9 @@ class ClaudeCodeService implements AgentServiceInterface {
             hooks: [preToolUseHook]
           }
         ]
-      }
+      },
+      ...(thinkingOptions?.effort ? { effort: thinkingOptions.effort } : {}),
+      ...(thinkingOptions?.thinking ? { thinking: thinkingOptions.thinking } : {})
     }
 
     if (session.accessible_paths.length > 1) {

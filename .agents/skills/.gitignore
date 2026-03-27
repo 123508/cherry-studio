@@ -10,5 +10,9 @@
 !gh-create-issue/**
 !gh-create-pr/
 !gh-create-pr/**
+!gh-pr-review/
+!gh-pr-review/**
 !prepare-release/
 !prepare-release/**
+!vercel-react-best-practices/
+!vercel-react-best-practices/**

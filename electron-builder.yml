@@ -140,28 +140,22 @@ artifactBuildCompleted: scripts/artifact-build-completed.js
 releaseInfo:
   releaseNotes: |
     <!--LANG:en-->
-    Cherry Studio 1.7.19 - Bug Fixes & Improvements
+    Cherry Studio 1.8.4 - Bug Fixes and New Features
+
+    ✨ New Features
+    - [API] Add knowledge base REST API endpoints
+    - [SelectionAssistant] Add Linux support for text selection toolbar
 
     🐛 Bug Fixes
-    - [Settings] Fixed provider name input removing spaces during typing
-    - [Data] Fixed factory reset not clearing agents, memories, knowledge base and notes data
-    - [Data] Fixed backup restore failure on Windows (EBUSY error)
-    - [MCP] Fixed MCP tools returning images exceeding API message size limits
-
-    💄 Improvements
-    - [Agent] Improved settings popup UI with better permission mode selection
-    - [Models] Updated MiniMax models to the latest M2.x series
+    - [Files] Fix PDF upload failing with "invalid part type: file" error for OpenAI-compatible providers (Moonshot, DeepSeek, Groq, etc.)
 
     <!--LANG:zh-CN-->
-    Cherry Studio 1.7.19 - 问题修复与改进
+    Cherry Studio 1.8.4 - 错误修复和新功能
+
+    ✨ 新功能
+    - [API] 添加知识库 REST API 端点
+    - [选择助手] 为文本选择工具栏添加 Linux 支持
 
     🐛 问题修复
-    - [设置] 修复服务商名称输入时空格被立即移除的问题
-    - [数据] 修复重置数据时未清除智能体、记忆、知识库和笔记数据的问题
-    - [数据] 修复 Windows 上恢复备份失败的问题（EBUSY 错误）
-    - [MCP] 修复 MCP 工具返回图片时超出 API 消息大小限制的问题
-
-    💄 改进
-    - [智能体] 优化设置弹窗界面，改进权限模式选择体验
-    - [模型] 更新 MiniMax 模型至最新的 M2.x 系列
+    - [文件] 修复 OpenAI 兼容提供商（Moonshot、DeepSeek、Groq 等）的 PDF 上传失败问题（"invalid part type: file" 错误）
     <!--LANG:END-->
