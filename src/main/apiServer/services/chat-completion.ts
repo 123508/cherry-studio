@@ -14,7 +14,9 @@ const logger = loggerService.withContext('ChatCompletionService')
  * Handles special cases like Copilot dynamic token fetching
  */
 async function createOpenAIClient(provider: Provider): Promise<OpenAI> {
-  let apiKey = provider.apiKey
+  // If multiple API keys are configured (comma-separated), use the first one.
+  // Matches the main-process convention in OpenClawService.
+  let apiKey = provider.apiKey ? provider.apiKey.split(',')[0].trim() : ''
   const defaultHeaders: Record<string, string> = {}
 
   // Special handling for Copilot: fetch dynamic token
